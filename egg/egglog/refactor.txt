@@ -1,0 +1,238 @@
+(with-dynamic-cost
+  (datatype Tensor
+    (T3Const i64 i64 i64)
+    (MConst i64 i64)
+    (Unfold Tensor i64)
+    (MAdd Tensor Tensor)
+    (MMul Tensor Tensor)
+    (Kron Tensor Tensor)
+    (Krao Tensor Tensor)
+    (Hdmr Tensor Tensor)
+    (VMMul Tensor Tensor)
+    (MT Tensor)
+    (Fold3 Tensor i64 i64 i64 i64)
+    (ModeNProd Tensor Tensor i64)
+  )
+)
+
+(function dim1 (Tensor) i64 :no-merge)
+(function dim2 (Tensor) i64 :no-merge)
+(function dim3 (Tensor) i64 :no-merge)
+(function row (Tensor) i64 :no-merge)
+(function col (Tensor) i64 :no-merge)
+
+;; RULES
+;; RULES
+;; RULES
+(rule ((= x (MConst r c)))
+      ((set (row x) r)
+       (set (col x) c)))
+
+(rule ((= x (MMul y z))
+       (= r (row y))
+       (= (col y) (row z))
+       (= c (col z)))
+      ((set (row x) r)
+       (set (col x) c)))
+
+(rule ((= x (MAdd y z))
+       (= (col y) (col z))
+       (= (row y) (row z))
+       (= r (row y))
+       (= c (col y)))
+      ((set (row x) r)
+       (set (col x) c)))
+
+(rule ((= x (Kron y z))
+       (= r1 (row y))
+       (= r2 (row z))
+       (= c1 (col y))
+       (= c2 (col z)))
+      ((set (row x) (* r1 r2))
+       (set (col x) (* c1 c2))))
+
+(rule ((= x (Krao y z))
+       (= (col y) (col z))
+       (= r (* (row y) (row z)))
+       (= c (col y)))
+      ((set (row x) r)
+       (set (col x) c)))
+
+(rule ((= x (Hdmr y z))
+       (= (row y) (row z))
+       (= (col y) (col z))
+       (= r (row y))
+       (= c (col y)))
+      ((set (row x) r)
+       (set (col x) c)))
+
+(rule ((= x (VMMul v m))
+       (= (col v) (row m))
+       (= c (col m))
+       (= (row v) 1))
+      ((set (row x) 1)
+       (set (col x) c)))
+
+(rule ((= t (MT m))
+       (= r (row m))
+       (= c (col m)))
+      ((set (row t) c)
+       (set (col t) r)))
+
+(rule ((= m (Unfold (T3Const i j k) 0)))
+      ((set (row m) i)
+       (set (col m) (* j k))))
+
+(rule ((= m (Unfold (T3Const i j k) 1)))
+      ((set (row m) j)
+       (set (col m) (* i k))))
+
+(rule ((= m (Unfold (T3Const i j k) 2)))
+      ((set (row m) k)
+       (set (col m) (* i j))))
+
+(rule ((= t (Fold3 mat x y z 0))
+       (= (row mat) x)
+       (= (col mat) (* y z)))
+      ((set (dim1 t) x)
+       (set (dim2 t) y)
+       (set (dim3 t) z)))
+
+(rule ((= t (Fold3 mat x y z 1))
+       (= (row mat) y)
+       (= (col mat) (* x z)))
+      ((set (dim1 t) y)
+       (set (dim2 t) x)
+       (set (dim3 t) z)))
+
+(rule ((= t (Fold3 mat x y z 2))
+       (= (row mat) z)
+       (= (col mat) (* y x)))
+      ((set (dim1 t) z)
+       (set (dim2 t) y)
+       (set (dim3 t) x)))
+
+(rule ((= x (ModeNProd T M n))
+       (= tflat (Unfold T n))
+       (= (col M) (row tflat))
+       (= d1 (dim1 T))
+       (= d2 (dim2 T))
+       (= d3 (dim3 T)))
+      ((set (dim1 x) d1)
+       (set (dim2 x) d2)
+       (set (dim3 x) d3)))
+
+;; COST RULES
+;; COST RULES
+;; COST RULES
+(rule ((MMul y z)
+       (= r (row y))
+       (= m (col y))
+       (= c (col z)))
+      ((set-cost (MMul y z) (* r (* m c)))))
+
+(rule ((MAdd y z)
+       (= r (row y))
+       (= c (col y)))
+      ((set-cost (MAdd y z) (* r c))))
+
+(rule ((Kron y z)
+       (= m1 (* (row y) (col y)))
+       (= m2 (* (row z) (col z))))
+      ((set-cost (Kron y z) (* m1 m2))))
+
+(rule ((Krao y z)
+       (= r (* (row y) (row z)))
+       (= c (col y)))
+      ((set-cost (Krao y z) (* c r))))
+
+(rule ((Hdmr y z)
+       (= r (row y))
+       (= c (col y)))
+      ((set-cost (Hdmr y z) (* r c))))
+
+(rule ((VMMul v m)
+       (= c (col m)))
+      ((set-cost (VMMul v m) c)))
+
+(rule ((Unfold (T3Const i j k) 0)
+       (= cost (* i (* j k))))
+      ((set-cost (Unfold (T3Const i j k) 0) cost)))
+
+(rule ((Unfold (T3Const i j k) 1)
+       (= cost (* j (* i k))))
+      ((set-cost (Unfold (T3Const i j k) 1) cost)))
+
+(rule ((Unfold (T3Const i j k) 2)
+       (= cost (* k (* i j))))
+      ((set-cost (Unfold (T3Const i j k) 2) cost)))
+
+(rule ((Fold3 M x y z 0)
+       (= cost (* x (* y z))))
+      ((set-cost (Fold3 M x y z 0) cost)))
+
+(rule ((Fold3 M x y z 1)
+       (= cost (* y (* x z))))
+      ((set-cost (Fold3 M x y z 1) cost)))
+
+(rule ((Fold3 M x y z 2)
+       (= cost (* z (* y x))))
+      ((set-cost (Fold3 M x y z 2) cost)))
+
+(rule ((ModeNProd T M n)
+       (= cu (cost (Unfold T n)))
+       (= cm (cost (MMul M (Unfold T n))))
+       (= cf (cost (Fold3 (MMul M (Unfold T n)) d1 d2 d3 n))))
+      ((set-cost (ModeNProd T M n) (+ cu (+ cm cf)))))
+
+;; REWRITES
+;; REWRITES
+;; REWRITES
+(birewrite (MAdd x y) (MAdd y x))
+(birewrite (MMul x (MMul y z)) (MMul (MMul x y) z))
+(birewrite (Kron x (Kron y z)) (Kron (Kron x y) z))
+(birewrite (MT (Kron a b)) (Kron (MT a) (MT b)))
+(birewrite (Kron a (MAdd b c)) (MAdd (Kron a b) (Kron a c)))
+(birewrite (Kron (MAdd b c) a) (MAdd (Kron b a) (Kron c a)))
+(birewrite (Kron (MAdd a b) (MAdd c d)) (MAdd (MMul a c) (MMul b d)))
+(birewrite (VMMul c (Kron a b)) (Kron (VMMul c a) b))
+(birewrite (Kron (VMMul c a) b) (Kron a (VMMul c b)))
+(birewrite (Krao x (Krao y z)) (Krao (Krao x y) z))
+(birewrite (Krao (MAdd y z) x) (MAdd (Krao x y) (Krao x z)))
+(birewrite (MMul (MT (Krao a b)) (Krao a b)) (Hdmr (MMul (MT a) a) (MMul (MT b) b)))
+
+;; EXPRESSIONS
+;; EXPRESSIONS
+;; EXPRESSIONS
+(let Mexpr (MMul (MMul (MConst 64 8) (MConst 8 256)) (MConst 256 2)))
+;; Kronecker
+(let Kexpr (Kron (Kron (MConst 2 8) (MConst 2 2)) (MConst 4 1)))
+(let KTExpr (Kron (MT (MConst 4 96)) (MT (MConst 96 4))))
+(let KDistExpr (MAdd (Kron (MConst 2 3) (MConst 5 3)) (Kron (MConst 2 3) (MConst 5 3))))
+(let KronAddExpr (Kron (MAdd (MConst 2 3) (MConst 2 3)) (MAdd (MConst 4 2) (MConst 4 2))))
+(let KronVectExpr (VMMul (MConst 1 6) (Kron (MConst 3 2) (MConst 2 4))))
+(let KronVectExpr2 (Kron (VMMul (MConst 1 2) (MConst 2 3)) (MConst 2 4)))
+;; Khatri-Rao
+(let Kaxpr (Krao (MConst 2 3) (Krao (MConst 4 3) (MConst 5 3))))
+(let Kaddexpr (MAdd (Krao (MConst 2 3) (MConst 5 3)) (Krao (MConst 2 3) (MConst 5 3))))
+(let KaTN (MMul (MT (Krao (MConst 3 2) (MConst 4 2))) (Krao (MConst 3 2) (MConst 4 2))))
+
+(run 20)
+
+(extract Mexpr)
+(extract Kexpr)
+(extract KTExpr)
+(extract KDistExpr)
+(extract KronAddExpr)
+(extract KronVectExpr)
+(extract KronVectExpr2)
+(extract Kaxpr)
+(extract Kaddexpr)
+(extract KaTN)
+
+(let Ten (T3Const 2 4 3))
+(let FM1 (MConst 2 2))  ;; for mode-1
+(let FM2 (MConst 4 1))  ;; for mode-2
+(let FM3 (MConst 3 3))  ;; for mode-3
+
+(run 20)
